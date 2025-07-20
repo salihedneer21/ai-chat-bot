@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './Chatbot.css';
-import Quiz from '../Quiz/Quiz';
-import Flashcard from '../Flashcard/Flashcard';
+// import Quiz from '../Quiz/Quiz';
+// import Flashcard from '../Flashcard/Flashcard';
 
 const Chatbot = () => {
   const initialMessage = {
@@ -19,11 +19,12 @@ const Chatbot = () => {
 
   const [messages, setMessages] = useState([initialMessage]);
   const [input, setInput] = useState('');
-  const [currentResponse, setCurrentResponse] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
     const userMessage = {
       text: input,
@@ -31,64 +32,141 @@ const Chatbot = () => {
       timestamp: new Date().getTime()
     };
 
-    setMessages([...messages, userMessage]);
+    setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
+    setIsLoading(true);
+    setLoadingStage('Analyzing your request...');
+
+    // Add initial loading message
+    const loadingMessageId = Date.now();
+    const loadingMessage = {
+      id: loadingMessageId,
+      sender: 'bot',
+      timestamp: loadingMessageId,
+      type: 'loading',
+      text: 'Analyzing your request...'
+    };
+    setMessages(prev => [...prev, loadingMessage]);
 
     try {
-      // Validate query before sending
-      if (!input) {
-        throw new Error('Query cannot be empty');
-      }
-
-      const response = await fetch('http://localhost:3000/api/search/query', {
+      // Create SSE connection
+      const response = await fetch('http://localhost:3000/api/search/query-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          query: input.trim() 
-        })
+        body: JSON.stringify({ query: currentInput.trim() })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to get response');
+        throw new Error('Failed to get response');
       }
 
-      const data = await response.json();
-      
-      // Validate response data
-      if (!data || !data.parsed) {
-        throw new Error('Invalid response format');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            currentEvent = line.substring(6).trim();
+          } else if (line.startsWith('data:')) {
+            try {
+              const data = JSON.parse(line.substring(5).trim());
+              handleSSEEvent(currentEvent, data, loadingMessageId);
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+            }
+          }
+        }
       }
-
-      let botMessage = {
-        sender: 'bot',
-        timestamp: new Date().getTime(),
-        type: data.parsed.type || 'text'
-      };
-
-      if (data.parsed.type === 'question' && data.results) {
-        botMessage.content = data.results;
-        botMessage.text = data.parsed['pre-prompt'];
-      } else if (data.parsed.type === 'flashcard' && data.results) {
-        botMessage.content = data.results;
-        botMessage.text = data.parsed['pre-prompt'];
-      } else {
-        // General chat response
-        botMessage.text = data.llmResponse || 'No response available';
-      }
-
-      setCurrentResponse(botMessage);
-      setMessages(prev => [...prev, botMessage]);
 
     } catch (error) {
       console.error('Error:', error);
-      setMessages(prev => [...prev, {
-        text: `Error: ${error.message || 'Something went wrong'}`,
-        sender: 'bot',
-        timestamp: new Date().getTime()
-      }]);
+      setMessages(prev => prev.map(msg => 
+        msg.id === loadingMessageId 
+          ? { ...msg, text: `Error: ${error.message}`, type: 'error' }
+          : msg
+      ));
+    } finally {
+      setIsLoading(false);
+      setLoadingStage('');
+    }
+  };
+
+  const handleSSEEvent = (eventType, data, loadingMessageId) => {
+    switch (eventType) {
+      case 'parsing':
+      case 'searching':
+      case 'fetching':
+      case 'generating':
+        setLoadingStage(data.status);
+        setMessages(prev => prev.map(msg => 
+          msg.id === loadingMessageId 
+            ? { ...msg, text: data.status, dots: true }
+            : msg
+        ));
+        break;
+
+      case 'pre-prompt':
+        // Update loading message with pre-prompt and keep loading for content
+        setMessages(prev => prev.map(msg => 
+          msg.id === loadingMessageId 
+            ? { 
+                ...msg, 
+                text: data.text, 
+                type: data.type,
+                showingPrePrompt: true,
+                dots: true
+              }
+            : msg
+        ));
+        setLoadingStage('Preparing content...');
+        break;
+
+      case 'complete':
+        // Replace loading message with final response
+        let finalMessage = {
+          id: loadingMessageId,
+          sender: 'bot',
+          timestamp: Date.now(),
+          type: data.parsed.type || 'text'
+        };
+
+        if (data.parsed.type === 'question' && data.results?.length > 0) {
+          finalMessage.content = data.results;
+          finalMessage.text = data.parsed['pre-prompt'] || 'Here are your questions:';
+        } else if (data.parsed.type === 'flashcard' && data.results?.length > 0) {
+          finalMessage.content = data.results;
+          finalMessage.text = data.parsed['pre-prompt'] || 'Here are your flashcards:';
+        } else {
+          finalMessage.text = data.llmResponse || 'No response available';
+        }
+
+        setMessages(prev => prev.map(msg => 
+          msg.id === loadingMessageId ? finalMessage : msg
+        ));
+        break;
+
+      case 'error':
+        setMessages(prev => prev.map(msg => 
+          msg.id === loadingMessageId 
+            ? { ...msg, text: `Error: ${data.message}`, type: 'error' }
+            : msg
+        ));
+        break;
+
+      default:
+        console.log('Unknown SSE event:', eventType, data);
     }
   };
 
@@ -127,20 +205,33 @@ const Chatbot = () => {
             </div>
           </div>
         );
+      
+      case 'loading':
+        return (
+          <div className="loading-message">
+            <p>{message.text}</p>
+            {message.dots && <TypingDots />}
+          </div>
+        );
+      
       case 'question':
         return (
           <div>
             <p>{message.text}</p>
-            <Quiz questions={message.content} />
+            {/* <Quiz questions={message.content} /> */}
+            <div>Questions will be rendered here</div>
           </div>
         );
+      
       case 'flashcard':
         return (
           <div>
             <p>{message.text}</p>
-            <Flashcard cards={message.content} />
+            {/* <Flashcard cards={message.content} /> */}
+            <div>Flashcards will be rendered here</div>
           </div>
         );
+      
       default:
         return <p>{message.text}</p>;
     }
@@ -164,7 +255,7 @@ const Chatbot = () => {
       
       <div className="chat-messages">
         {messages.map((message, index) => (
-          <div key={index} className={`message ${message.sender}`}>
+          <div key={message.id || index} className={`message ${message.sender}`}>
             {renderResponse(message)}
           </div>
         ))}
@@ -176,9 +267,23 @@ const Chatbot = () => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask anything..."
+          disabled={isLoading}
         />
-        <button type="submit">Send</button>
+        <button type="submit" disabled={isLoading}>
+          {isLoading ? 'Sending...' : 'Send'}
+        </button>
       </form>
+    </div>
+  );
+};
+
+// Typing dots component
+const TypingDots = () => {
+  return (
+    <div className="typing-dots">
+      <span></span>
+      <span></span>
+      <span></span>
     </div>
   );
 };

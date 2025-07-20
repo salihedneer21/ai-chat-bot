@@ -13,21 +13,45 @@ const validateQuery = (req, res, next) => {
   next();
 };
 
-router.post('/query', validateQuery, async (req, res) => {
+// SSE endpoint for streaming responses
+router.post('/query-stream', validateQuery, async (req, res) => {
   try {
     const { query } = req.body;
     console.log('📝 Incoming query:', query);
 
-    // Step 1: Parse with LLM
+    // Set SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    // Helper function to send SSE messages
+    const sendEvent = (event, data) => {
+      res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Step 1: Parse with LLM and send pre-prompt immediately
     console.log('🔄 Starting LLM parsing...');
+    sendEvent('parsing', { status: 'Analyzing your request...' });
+    
     const parsedData = await extractFromPrompt(query);
     console.log('✅ Parsed data:', JSON.stringify(parsedData, null, 2));
 
     if (!parsedData) {
-      console.log('❌ Failed to parse query');
-      return res.status(422).json({ 
-        error: 'Failed to parse query',
-        details: 'The query could not be processed by the LLM'
+      sendEvent('error', { message: 'Failed to parse query' });
+      res.end();
+      return;
+    }
+
+    // Send pre-prompt immediately
+    if (parsedData['pre-prompt']) {
+      sendEvent('pre-prompt', {
+        text: parsedData['pre-prompt'],
+        type: parsedData.type
       });
     }
 
@@ -36,20 +60,31 @@ router.post('/query', validateQuery, async (req, res) => {
 
     // Handle based on query type
     if (parsedData.type === 'general' || !parsedData.context) {
-      console.log('🔄 Processing as general query...');
+      sendEvent('generating', { status: 'Generating response...' });
       llmResponse = await getLLMResponse(query, []);
-      console.log('✅ General LLM response received');
+      
+      sendEvent('complete', {
+        parsed: parsedData,
+        results: [],
+        llmResponse: llmResponse,
+        metadata: {
+          totalResults: 0,
+          queryType: parsedData.type,
+          context: parsedData.context
+        }
+      });
     } else {
       // For specific queries, do semantic search
-      console.log('🔄 Starting semantic search...');
+      sendEvent('searching', { status: 'Finding relevant content...' });
+      
       const searchResults = await semanticSearch(parsedData.context, {
         type: parsedData.type,
         total: parsedData.total || 3
       });
-      console.log('✅ Search results:', JSON.stringify(searchResults, null, 2));
 
       if (searchResults && searchResults.length > 0) {
-        console.log('🔄 Fetching content for results...');
+        sendEvent('fetching', { status: 'Preparing content...' });
+        
         contentResults = await Promise.all(
           searchResults.map(async (result) => {
             const content = await fetchContentForId(result.id);
@@ -59,21 +94,80 @@ router.post('/query', validateQuery, async (req, res) => {
             };
           })
         );
-        console.log('✅ Content fetched');
       }
 
-      // Generate LLM response if needed
-      if (!contentResults.some(r => r.content)) {
-        console.log('🔄 Generating fallback LLM response...');
-        llmResponse = await getLLMResponse(query, []);
-      }
+      // Send final results
+      sendEvent('complete', {
+        parsed: parsedData,
+        results: contentResults,
+        llmResponse: llmResponse,
+        metadata: {
+          totalResults: contentResults.length,
+          queryType: parsedData.type,
+          context: parsedData.context
+        }
+      });
     }
 
-    console.log('🔄 Preparing response...');
+    res.end();
+
+  } catch (error) {
+    console.error('❌ Search error:', error);
+    res.write(`event: error\n`);
+    res.write(`data: ${JSON.stringify({ message: error.message })}\n\n`);
+    res.end();
+  }
+});
+
+// Keep existing endpoint for fallback
+router.post('/query', validateQuery, async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    // Step 1: Parse with LLM
+    const parsedData = await extractFromPrompt(query);
+    if (!parsedData) {
+      return res.status(422).json({ 
+        error: 'Failed to parse query',
+        details: 'The query could not be processed by the LLM'
+      });
+    }
+
+    // Step 2: Perform semantic search
+    const searchResults = await semanticSearch(parsedData.context, {
+      type: parsedData.type,
+      total: parsedData.total || 3 // Ensure default value
+    });
+
+    if (!searchResults || searchResults.length === 0) {
+      return res.json({
+        parsed: parsedData,
+        results: [],
+        llmResponse: 'No relevant content found for your query.'
+      });
+    }
+
+    // Step 3: Fetch content for results
+    const contentResults = await Promise.all(
+      searchResults.map(async (result) => {
+        const content = await fetchContentForId(result.id);
+        return {
+          ...result,
+          content: content?.content || null
+        };
+      })
+    );
+
+    // Step 4: Generate LLM response for general
+    let llmResponse = null;
+    if (parsedData.type === 'general' || !contentResults.some(r => r.content)) {
+      llmResponse = await getLLMResponse(query, contentResults);
+    }
+
     res.json({
       parsed: parsedData,
       results: contentResults,
-      llmResponse: llmResponse || "I'll need more specific information to help you. Could you please provide more details?",
+      llmResponse,
       metadata: {
         totalResults: contentResults.length,
         queryType: parsedData.type,
@@ -82,8 +176,7 @@ router.post('/query', validateQuery, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Search error:', error);
-    console.error('Error stack:', error.stack);
+    console.error('Search error:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
