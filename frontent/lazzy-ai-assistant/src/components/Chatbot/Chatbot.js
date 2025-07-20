@@ -4,7 +4,20 @@ import Quiz from '../Quiz/Quiz';
 import Flashcard from '../Flashcard/Flashcard';
 
 const Chatbot = () => {
-  const [messages, setMessages] = useState([]);
+  const initialMessage = {
+    sender: 'bot',
+    timestamp: new Date().getTime(),
+    text: "Hey there! 👋\nHow can I help?",
+    type: 'welcome'
+  };
+
+  const popularSearches = [
+    "What bone articulates with the femur?",
+    "What topic is important to study for NEET-PG in Osteology?",
+    "Which best serves the purpose of osteology?"
+  ];
+
+  const [messages, setMessages] = useState([initialMessage]);
   const [input, setInput] = useState('');
   const [currentResponse, setCurrentResponse] = useState(null);
 
@@ -85,6 +98,35 @@ const Chatbot = () => {
     }
 
     switch (message.type) {
+      case 'welcome':
+        return (
+          <div className="welcome-message">
+            <div className="welcome-title">How can I help?</div>
+            <div className="action-buttons">
+              <button className="action-button">
+                <span role="img" aria-label="search">🔍</span>
+                <span className="action-button-text">Find PYQs</span>
+              </button>
+              <button className="action-button">
+                <span role="img" aria-label="flashcards">📝</span>
+                <span className="action-button-text">Flashcards</span>
+              </button>
+            </div>
+            <div className="popular-searches">
+              <h3>POPULAR SEARCHES</h3>
+              {popularSearches.map((search, index) => (
+                <div 
+                  key={index} 
+                  className="search-item"
+                  onClick={() => setInput(search)}
+                >
+                  <span className="search-icon">🔍</span>
+                  {search}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
       case 'question':
         return (
           <div>
@@ -106,6 +148,20 @@ const Chatbot = () => {
 
   return (
     <div className="chatbot-container">
+      <div className="chat-header">
+        <span className="header-title">Ask Rezzy</span>
+        <div className="header-actions">
+          <button className="header-button">
+            Start New Chat
+            <span>+</span>
+          </button>
+          <button className="header-button">
+            View Past Chats
+            <span>🕒</span>
+          </button>
+        </div>
+      </div>
+      
       <div className="chat-messages">
         {messages.map((message, index) => (
           <div key={index} className={`message ${message.sender}`}>
@@ -113,6 +169,7 @@ const Chatbot = () => {
           </div>
         ))}
       </div>
+
       <form onSubmit={handleSubmit} className="chat-input">
         <input
           type="text"

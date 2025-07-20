@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Markdown from 'markdown-to-jsx';
 
 const Quiz = ({ questions }) => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -88,7 +89,9 @@ const Quiz = ({ questions }) => {
         {selectedAnswers[currentQuestionIndex] && (
           <div className="explanation">
             <h4>Explanation:</h4>
-            <p>{currentQuestion.content.explanation}</p>
+            <Markdown className="markdown-content">
+              {currentQuestion.content.explanation}
+            </Markdown>
           </div>
         )}
 
@@ -291,10 +294,29 @@ const Quiz = ({ questions }) => {
           color: #333;
         }
 
-        .explanation p {
+        .markdown-content {
           margin: 0;
           color: #666;
           line-height: 1.4;
+        }
+
+        .markdown-content h2 {
+          font-size: 1.2em;
+          margin: 1em 0 0.5em;
+          color: #333;
+        }
+
+        .markdown-content ul {
+          margin: 0.5em 0;
+          padding-left: 1.5em;
+        }
+
+        .markdown-content li {
+          margin: 0.3em 0;
+        }
+
+        .markdown-content p {
+          margin: 0.5em 0;
         }
       `}</style>
     </div>

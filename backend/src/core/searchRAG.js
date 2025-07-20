@@ -20,90 +20,77 @@ async function getEmbedding(text) {
 }
 
 async function getLLMResponse(query, searchResults) {
-  if (!searchResults || searchResults.length === 0) {
-    return "I don't have enough information to provide a specific response to your query.";
-  }
+  console.log('🔄 getLLMResponse called with query:', query);
+  console.log('searchResults:', JSON.stringify(searchResults, null, 2));
 
-  const context = searchResults.map(result => {
-    if (result.content) {
-      if (result.type === 'flashcard') {
-        return `Flashcard Content:\nFront: ${result.content.front_content}\nBack: ${result.content.back_content}`;
-      } else if (result.type === 'question') {
-        return `Question Content:\nQ: ${result.content.question_text}\nA: ${result.content.explanation}`;
-      }
-    }
-    return '';
-  }).filter(Boolean).join('\n\n');
+  const prompt = `You are a helpful medical education assistant. 
+Query: "${query}"
+${searchResults && searchResults.length > 0 
+  ? `\nContext:\n${searchResults.map(r => r.content ? JSON.stringify(r.content) : '').join('\n')}` 
+  : '\nNo specific context available - provide a general response'}
 
-  if (!context) {
-    return "I found some related content but couldn't extract the specific information needed.";
-  }
-
-  const prompt = `You are a helpful educational assistant. Use the following retrieved content to answer the user's question.
-If you don't have enough information, say so and provide a general response.
-
-Retrieved Content:
-${context}
-
-User Query: ${query}
-
-Please provide a clear and concise response.`;
+Please provide a clear and helpful response. If this is a follow-up question, ask for more context if needed.`;
 
   try {
+    console.log('🔄 Sending prompt to OpenAI...');
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [{ role: "user", content: prompt }],
       temperature: 0.7,
       max_tokens: 500
     });
-
+    
+    console.log('✅ Received response from OpenAI');
     return completion.choices[0].message.content;
   } catch (error) {
-    console.error('LLM response error:', error);
-    return null;
+    console.error('❌ LLM response error:', error);
+    console.error('Error stack:', error.stack);
+    return "I apologize, but I'm having trouble processing your request. Could you please try again?";
   }
 }
 
 async function semanticSearch(query, metadata = null) {
-  if (!query) {
-    throw new Error('Query is required for semantic search');
-  }
+  console.log('🔄 semanticSearch called with:', { query, metadata });
 
-  const index = pinecone.index(process.env.PINECONE_INDEX);
-  const queryEmbedding = await getEmbedding(query);
-
-  // Prepare filter based on type only
-  let filter = {};
-
-  if (metadata?.type && metadata.type.toLowerCase() !== 'general') {
-    filter = {
-      type: metadata.type.toLowerCase()
-    };
+  // Handle empty/undefined query
+  if (!query || query.trim().length === 0) {
+    console.log('⚠️ Empty query detected, skipping semantic search');
+    return [];
   }
 
   try {
+    const index = pinecone.index(process.env.PINECONE_INDEX);
+    console.log('🔄 Getting embedding for query...');
+    const queryEmbedding = await getEmbedding(query);
+    
+    let filter = {};
+    if (metadata?.type && metadata.type.toLowerCase() !== 'general') {
+      filter = { type: metadata.type.toLowerCase() };
+    }
+    
+    console.log('🔄 Executing Pinecone query with filter:', filter);
     const searchResults = await index.query({
       vector: queryEmbedding,
       filter: Object.keys(filter).length > 0 ? filter : undefined,
-      topK: Math.min(Math.max(1, metadata?.total || 5), 10), // Ensure between 1 and 10
+      topK: Math.min(Math.max(1, metadata?.total || 5), 10),
       includeMetadata: true
     });
 
-    if (!searchResults?.matches) {
-      return [];
-    }
-
-    return searchResults.matches.map(match => ({
-      id: match.id,
-      score: match.score,
-      subject: match.metadata?.subject || 'Unknown subject',
-      topic: match.metadata?.topic || 'Unknown topic',
-      type: match.metadata?.type || 'Unknown type'
-    }));
+    console.log('✅ Search results received');
+    return searchResults?.matches 
+      ? searchResults.matches.map(match => ({
+          id: match.id,
+          score: match.score,
+          subject: match.metadata?.subject || 'Unknown subject',
+          topic: match.metadata?.topic || 'Unknown topic',
+          type: match.metadata?.type || 'Unknown type'
+        }))
+      : [];
 
   } catch (error) {
-    console.error('Search error:', error);
-    throw new Error('Failed to perform semantic search');
+    console.error('❌ Semantic search error:', error);
+    console.error('Error stack:', error.stack);
+    return [];
   }
 }
 

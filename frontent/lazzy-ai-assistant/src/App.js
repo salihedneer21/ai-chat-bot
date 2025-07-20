@@ -1,16 +1,16 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import Study from './pages/Study';
+import Chatbot from './components/Chatbot/Chatbot';
+import './App.css';
 
 function App() {
   return (
     <Router>
       <div className="App">
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/study" element={<Study />} />
+          {/* any routes in future */}
         </Routes>
+        <Chatbot />
       </div>
     </Router>
   );

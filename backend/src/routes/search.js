@@ -16,51 +16,64 @@ const validateQuery = (req, res, next) => {
 router.post('/query', validateQuery, async (req, res) => {
   try {
     const { query } = req.body;
+    console.log('📝 Incoming query:', query);
 
     // Step 1: Parse with LLM
+    console.log('🔄 Starting LLM parsing...');
     const parsedData = await extractFromPrompt(query);
+    console.log('✅ Parsed data:', JSON.stringify(parsedData, null, 2));
+
     if (!parsedData) {
+      console.log('❌ Failed to parse query');
       return res.status(422).json({ 
         error: 'Failed to parse query',
         details: 'The query could not be processed by the LLM'
       });
     }
 
-    // Step 2: Perform semantic search
-    const searchResults = await semanticSearch(parsedData.context, {
-      type: parsedData.type,
-      total: parsedData.total || 3 // Ensure default value
-    });
-
-    if (!searchResults || searchResults.length === 0) {
-      return res.json({
-        parsed: parsedData,
-        results: [],
-        llmResponse: 'No relevant content found for your query.'
-      });
-    }
-
-    // Step 3: Fetch content for results
-    const contentResults = await Promise.all(
-      searchResults.map(async (result) => {
-        const content = await fetchContentForId(result.id);
-        return {
-          ...result,
-          content: content?.content || null
-        };
-      })
-    );
-
-    // Step 4: Generate LLM response for general
+    let contentResults = [];
     let llmResponse = null;
-    if (parsedData.type === 'general' || !contentResults.some(r => r.content)) {
-      llmResponse = await getLLMResponse(query, contentResults);
+
+    // Handle based on query type
+    if (parsedData.type === 'general' || !parsedData.context) {
+      console.log('🔄 Processing as general query...');
+      llmResponse = await getLLMResponse(query, []);
+      console.log('✅ General LLM response received');
+    } else {
+      // For specific queries, do semantic search
+      console.log('🔄 Starting semantic search...');
+      const searchResults = await semanticSearch(parsedData.context, {
+        type: parsedData.type,
+        total: parsedData.total || 3
+      });
+      console.log('✅ Search results:', JSON.stringify(searchResults, null, 2));
+
+      if (searchResults && searchResults.length > 0) {
+        console.log('🔄 Fetching content for results...');
+        contentResults = await Promise.all(
+          searchResults.map(async (result) => {
+            const content = await fetchContentForId(result.id);
+            return {
+              ...result,
+              content: content?.content || null
+            };
+          })
+        );
+        console.log('✅ Content fetched');
+      }
+
+      // Generate LLM response if needed
+      if (!contentResults.some(r => r.content)) {
+        console.log('🔄 Generating fallback LLM response...');
+        llmResponse = await getLLMResponse(query, []);
+      }
     }
 
+    console.log('🔄 Preparing response...');
     res.json({
       parsed: parsedData,
       results: contentResults,
-      llmResponse,
+      llmResponse: llmResponse || "I'll need more specific information to help you. Could you please provide more details?",
       metadata: {
         totalResults: contentResults.length,
         queryType: parsedData.type,
@@ -69,7 +82,8 @@ router.post('/query', validateQuery, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Search error:', error);
+    console.error('❌ Search error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ 
       error: 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
