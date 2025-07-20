@@ -1,4 +1,14 @@
-### how to insert data into RAG
-cd backend
-node scripts/embed_and_upsert_all.js 
-this will upsert (insert/update) based on ids# ai-chat-bot
+### how to run
+clone the repo
+# run the backend first
+git clone https://github.com/salihedneer21/ai-chat-bot
+cd ai-chat-bot/backend
+npm i
+npm start
+
+# run the frontend
+cd frontent
+cd lazzy-ai-assistant
+npm i
+npm start
+
