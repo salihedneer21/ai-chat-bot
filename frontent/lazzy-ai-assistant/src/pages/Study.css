@@ -1,0 +1,38 @@
+.study {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+}
+
+.study-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.study-controls {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.type-button {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+  border: 2px solid #007bff;
+  background: none;
+  color: #007bff;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.type-button.active {
+  background: #007bff;
+  color: white;
+}
+
+.type-button:hover {
+  background: #007bff;
+  color: white;
+}
