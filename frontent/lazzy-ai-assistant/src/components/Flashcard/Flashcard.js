@@ -29,13 +29,16 @@ const Flashcard = ({ cards }) => {
       </div>
 
       <div className="flashcard-content">
-        <div className="card-section front">
-          <h3>FRONT</h3>
-          <p>{currentCard.content.front_content}</p>
-        </div>
-        <div className="card-section back">
-          <h3>BACK</h3>
-          <p>{currentCard.content.back_content}</p>
+        <div className="card">
+          <div className="card-section">
+            <h3>FRONT</h3>
+            <p>{currentCard.content.front_content}</p>
+          </div>
+          <hr className="divider" />
+          <div className="card-section">
+            <h3>BACK</h3>
+            <p>{currentCard.content.back_content}</p>
+          </div>
         </div>
       </div>
 
@@ -79,17 +82,20 @@ const Flashcard = ({ cards }) => {
         }
 
         .flashcard-content {
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
           margin-bottom: 30px;
         }
 
-        .card-section {
+        .card {
           background: white;
           border-radius: 12px;
           padding: 30px;
           box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .divider {
+          border: none;
+          border-top: 1px solid #eee;
+          margin: 30px 0;
         }
 
         .card-section h3 {
@@ -105,10 +111,6 @@ const Flashcard = ({ cards }) => {
           font-size: 22px;
           line-height: 1.5;
           margin: 0;
-        }
-
-        .back {
-          background: #f8f9fa;
         }
 
         .navigation-controls {

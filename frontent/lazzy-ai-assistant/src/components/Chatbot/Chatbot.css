@@ -119,14 +119,17 @@
 }
 
 .message.user {
-  background-color: #e3f2fd;
-  color: white;
+  background-color: #FFFFFF;
+  color: #000000;
   margin-left: 20%;
+  border: 1px solid #E5E7EB;
 }
 
 .message.bot {
-  background-color: #f8f9fa;
+  background-color: transparent;
+  color: #000000;
   margin-right: auto;
+  border: none;
 }
 
 .chat-input {

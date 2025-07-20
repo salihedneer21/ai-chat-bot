@@ -27,7 +27,7 @@ async function getLLMResponse(query, searchResults) {
 Query: "${query}"
 ${searchResults && searchResults.length > 0 
   ? `\nContext:\n${searchResults.map(r => r.content ? JSON.stringify(r.content) : '').join('\n')}` 
-  : '\nNo specific context available - provide a general response'}
+  : '\nNo specific context available - provide a general response related to medical education but if user query is not related to medical field or follow up answer im not trained on that data something like that dont answer that question.'}
 
 Please provide a clear and helpful response. If this is a follow-up question, ask for more context if needed.`;
 
