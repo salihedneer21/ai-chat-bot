@@ -12,3 +12,7 @@ cd lazzy-ai-assistant </br>
 npm i </br>
 npm start </br>
 
+# Pending Tasks 
+1. Unit Testing
+2. Chat History
+3. Make RAG Better
